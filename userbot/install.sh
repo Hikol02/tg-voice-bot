@@ -62,13 +62,13 @@ echo "[INFO] Step 1/6: Detecting Linux Distribution and Package Manager..."
 if command -v apt-get >/dev/null 2>&1; then
     PKG_MGR="apt"
     apt-get update -qq
-    apt-get install -y -qq build-essential cmake git ffmpeg python3 python3-pip python3-venv curl
+    apt-get install -y -qq build-essential cmake git ffmpeg python3 python3-pip python3-venv python3-tk curl
 elif command -v dnf >/dev/null 2>&1; then
     PKG_MGR="dnf"
-    dnf install -y -q gcc gcc-c++ cmake git ffmpeg python3 python3-pip curl
+    dnf install -y -q gcc gcc-c++ cmake git ffmpeg python3 python3-pip python3-tkinter curl
 elif command -v pacman >/dev/null 2>&1; then
     PKG_MGR="pacman"
-    pacman -Sy --noconfirm base-devel cmake git ffmpeg python python-pip curl
+    pacman -Sy --noconfirm base-devel cmake git ffmpeg python python-pip tk curl
 else
     echo "[WARNING] Unknown package manager. Ensure cmake, gcc, git, ffmpeg and python3 are installed."
 fi
@@ -109,26 +109,35 @@ echo "[INFO] Downloading GGML model: $WHISPER_MODEL..."
 bash ./models/download-ggml-model.sh "$WHISPER_MODEL"
 cd "$INSTALL_DIR"
 
-echo "[INFO] Step 3.5/6: Setting up local tg-ws-proxy (alexbers/mtprotoproxy)..."
+echo "[INFO] Step 3.5/6: Setting up local tg-ws-proxy (Flowseal/tg-ws-proxy)..."
 cd /opt
 if [ ! -d "tg-ws-proxy" ]; then
-    git clone https://github.com/alexbers/mtprotoproxy.git tg-ws-proxy
+    git clone https://github.com/Flowseal/tg-ws-proxy.git
 fi
 cd tg-ws-proxy
+python3 -m venv venv
+./venv/bin/pip install cryptography aiohttp websockets pillow customtkinter
+
+cat << PROXY_CONFIG > /opt/tg-ws-proxy/config.json
+{
+  "port": 1443,
+  "secret": "dd54defaad7b9d6abf694539af11efe10b",
+  "cf_proxy": "auto"
+}
+PROXY_CONFIG
+
 cat << PROXY_SERVICE > /etc/systemd/system/tg-ws-proxy.service
 [Unit]
-Description=Telegram MTProto Proxy
+Description=Telegram WebSocket Proxy Server
 After=network.target
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/tg-ws-proxy
-ExecStart=/usr/bin/python3 mtprotoproxy.py
+ExecStart=/opt/tg-ws-proxy/venv/bin/python -m proxy.tg_ws_proxy
 Restart=always
-RestartSec=3
-StandardOutput=journal
-StandardError=journal
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -136,6 +145,7 @@ PROXY_SERVICE
 
 systemctl daemon-reload
 systemctl enable --now tg-ws-proxy.service
+systemctl start tg-ws-proxy.service
 sleep 3
 cd "$INSTALL_DIR"
 
