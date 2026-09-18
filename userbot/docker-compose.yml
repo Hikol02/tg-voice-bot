@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  userbot:
+    build: .
+    container_name: tg_voice_transcriber_userbot
+    restart: unless-stopped
+    network_mode: "host" # Чтобы иметь доступ к локальному 127.0.0.1 ws/mtproto прокси
+    env_file:
+      - .env
+    volumes:
+      - ./models:/app/models
+      - ./sessions:/app
+    stdin_open: true
+    tty: true

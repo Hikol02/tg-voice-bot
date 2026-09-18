@@ -1,0 +1,6 @@
+{
+  "name": "Telethon Voice Transcriber Userbot",
+  "description": "Конфигуратор, генератор кода и документация для Python Telethon юзербота с локальной STT-расшифровкой голосовых сообщений (Whisper), свёрнутыми цитатами и поддержкой прокси.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Telethon Voice Transcriber Userbot
+After=network.target tg-ws-proxy.service
+Wants=tg-ws-proxy.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/tg_voice_userbot
+ExecStart=/opt/tg_voice_userbot/venv/bin/python userbot.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
