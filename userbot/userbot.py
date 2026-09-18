@@ -4,8 +4,10 @@ import logging
 import asyncio
 import tempfile
 import subprocess
+import getpass
+import random
 from typing import Optional, Tuple
-from telethon import TelegramClient, events, connection
+from telethon import TelegramClient, events, connection, functions, errors
 from telethon.tl import types
 from telethon.tl.types import MessageEntityBlockquote
 
@@ -426,9 +428,57 @@ async def on_voice_message(event):
                 pass
 
 
+async def _keepalive_worker(stop_event: asyncio.Event):
+    """
+    Actively pings Telegram server every 2.5 seconds during connection/auth
+    to prevent intermediate MTProto/WebSocket proxies and Cloudflare from dropping
+    idle TCP connections (which causes '0 bytes read' and AUTH_KEY_UNREGISTERED).
+    """
+    while not stop_event.is_set():
+        try:
+            if client.is_connected():
+                await client(functions.PingRequest(ping_id=random.randint(1, 0x7FFFFFFF)))
+        except Exception:
+            pass
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=2.5)
+        except asyncio.TimeoutError:
+            pass
+
+
+async def _async_input(prompt: str) -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, input, prompt)
+
+
+async def _async_getpass(prompt: str) -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, getpass.getpass, prompt)
+
+
 async def main():
     logger.info("Connecting to Telegram...")
-    await client.start(phone=config.PHONE_NUMBER if config.PHONE_NUMBER else None)
+    stop_keepalive = asyncio.Event()
+    keepalive_task = asyncio.create_task(_keepalive_worker(stop_keepalive))
+
+    try:
+        phone_param = config.PHONE_NUMBER if config.PHONE_NUMBER else lambda: _async_input("Please enter your phone: ")
+        await client.start(
+            phone=phone_param,
+            code_callback=lambda: _async_input("Please enter the code you received: "),
+            password=lambda: _async_getpass("Please enter your password: "),
+        )
+    except errors.AuthKeyUnregisteredError:
+        session_path = f"{config.SESSION_NAME}.session"
+        logger.error(
+            "The authorization session key was invalidated by Telegram. "
+            f"Please remove '{session_path}' and restart the userbot to authenticate fresh."
+        )
+        raise
+    finally:
+        stop_keepalive.set()
+        keepalive_task.cancel()
+
     me = await client.get_me()
     logger.info(f"Authorized successfully as: {me.first_name} (@{me.username or 'no_username'}, ID: {me.id})")
     logger.info("Userbot is running and listening for outgoing messages.")
