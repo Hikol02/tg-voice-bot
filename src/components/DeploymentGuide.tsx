@@ -14,7 +14,8 @@ export const DeploymentGuide: React.FC = () => {
     {
       title: '1. Быстрая установка скриптом (Автоопределение CPU и дистрибутива)',
       desc: 'Скрипт install.sh сам определит процессор (если это AMD Phenom II без AVX — скомпилирует whisper.cpp с флагами совместимости), установит нужные пакеты (apt/dnf/pacman) и запросит настройки.',
-      code: `curl -sSL https://raw.githubusercontent.com/YOUR_USER/tg-voice-userbot/main/install.sh -o install.sh
+      code: `git clone https://github.com/YOUR_USER/tg-voice-userbot.git
+cd tg-voice-userbot
 sudo bash install.sh`,
     },
     {

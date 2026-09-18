@@ -757,10 +757,12 @@ LOG_LEVEL=INFO
 ENV_EOF
 
 # Copy source python files
-if [ -f "\$ORIG_DIR/userbot.py" ]; then
+if [ -f "\$ORIG_DIR/userbot/userbot.py" ]; then
+    cp -f "\$ORIG_DIR/userbot/config.py" "\$ORIG_DIR/userbot/proxy_resolver.py" "\$ORIG_DIR/userbot/userbot.py" "\$INSTALL_DIR/"
+elif [ -f "\$ORIG_DIR/userbot.py" ]; then
     cp -f "\$ORIG_DIR/config.py" "\$ORIG_DIR/proxy_resolver.py" "\$ORIG_DIR/userbot.py" "\$INSTALL_DIR/"
 else
-    echo "[ERROR] userbot.py not found in \$ORIG_DIR!"
+    echo "[ERROR] userbot.py not found in \$ORIG_DIR or \$ORIG_DIR/userbot!"
     echo "Please make sure you are running install.sh from the repository folder."
     exit 1
 fi
@@ -825,12 +827,16 @@ set -e
 
 read -p "Введите URL вашего GitHub репозитория (например, https://github.com/USER/tg-voice-userbot.git): " REPO_URL
 
-git init
-git branch -M main
+# Check if git is initialized
+if [ ! -d ".git" ]; then
+    git init
+    git branch -M main
+fi
+
 git add .
 git commit -m "Initial commit: Telegram Voice Transcriber with tg-ws-proxy & whisper.cpp support" || true
 git remote remove origin 2>/dev/null || true
-git remote add origin "$REPO_URL"
+git remote add origin "\$REPO_URL"
 git push -u origin main
 echo "[INFO] Проект успешно опубликован на GitHub!"
 `,
