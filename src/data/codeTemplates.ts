@@ -40,7 +40,7 @@ WHISPER_DOWNLOAD_DIR=./models
 
 # Поведение при получении голосового
 ACTION_MODE=${cfg.actionMode}
-QUOTE_HEADER=${cfg.quoteHeader}
+QUOTE_HEADER=
 PROCESS_ROUND_VIDEOS=${cfg.processRoundVideos ? 'True' : 'False'}
 NOTIFY_IF_EMPTY=${cfg.notifyIfEmpty ? 'True' : 'False'}
 LOG_LEVEL=${cfg.logLevel}
@@ -259,7 +259,7 @@ async def handle_my_voice_message(event):
         logger.info(f"Транскрибировано: {transcribed_text[:60]}...")
 
         # Формируем заголовок и свёрнутую цитату (Collapsible blockquote)
-        header = f"{config.QUOTE_HEADER}\\n" if config.QUOTE_HEADER else ""
+        header = ""
         content = transcribed_text
         full_text = f"{header}{content}"
 
@@ -674,6 +674,36 @@ git remote add origin "$REPO_URL"
 git push -u origin main
 echo "[INFO] Проект успешно опубликован на GitHub!"
 `,
+    },
+    {
+      name: 'uninstall.sh',
+      path: 'uninstall.sh',
+      language: 'bash',
+      description: 'Полный деинсталлятор для удаления юзербота и прокси с сервера.',
+      content: `#!/usr/bin/env bash
+# Uninstaller for Telegram Voice Transcriber Userbot
+
+if [[ $EUID -ne 0 ]]; then
+   echo "[ERROR] This script must be run as root (use: sudo bash uninstall.sh)."
+   exit 1
+fi
+
+echo "Stopping and disabling services..."
+systemctl stop tg-voice-userbot.service 2>/dev/null || true
+systemctl disable tg-voice-userbot.service 2>/dev/null || true
+systemctl stop tg-ws-proxy.service 2>/dev/null || true
+systemctl disable tg-ws-proxy.service 2>/dev/null || true
+
+echo "Removing systemd services..."
+rm -f /etc/systemd/system/tg-voice-userbot.service
+rm -f /etc/systemd/system/tg-ws-proxy.service
+systemctl daemon-reload
+
+echo "Removing bot files..."
+rm -rf /opt/tg_voice_userbot
+rm -rf /opt/tg-ws-proxy
+
+echo "Uninstallation complete."`,
     },
   ];
 }

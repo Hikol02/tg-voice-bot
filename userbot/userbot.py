@@ -401,7 +401,7 @@ async def on_voice_message(event):
 
         # No header before the quote (as explicitly requested by user)
         # Transcribed text goes directly inside the collapsible blockquote entity
-        header = f"{config.QUOTE_HEADER}\n" if config.QUOTE_HEADER else ""
+        header = ""
         full_text = f"{header}{transcribed_text}"
         quote_entity = MessageEntityBlockquote(
             offset=utf16_len(header),
