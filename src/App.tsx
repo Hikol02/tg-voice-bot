@@ -1,10 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import JSZip from 'jszip';
-import { Header } from './components/Header';
+import { Terminal, Download, Copy, Check, AlertTriangle, Play, Square, RefreshCw, FileText } from 'lucide-react';
 import { ConfigPanel } from './components/ConfigPanel';
-import { TelegramPreview } from './components/TelegramPreview';
 import { CodeViewer } from './components/CodeViewer';
-import { DeploymentGuide } from './components/DeploymentGuide';
 import { UserbotConfig, ProjectFile } from './types';
 import { generateConfigFiles, generateEnv } from './data/codeTemplates';
 
@@ -25,7 +23,7 @@ export default function App() {
     socksPort: 10808,
     socksUsername: '',
     socksPassword: '',
-    whisperModelSize: 'base',
+    whisperModelSize: 'small',
     whisperDevice: 'cpu',
     whisperComputeType: 'int8',
     whisperLanguage: 'ru',
@@ -44,7 +42,6 @@ export default function App() {
   const [copiedEnv, setCopiedEnv] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
-  // Generate dynamic project files based on the reactive user configuration
   const projectFiles: ProjectFile[] = useMemo(() => {
     return generateConfigFiles(config);
   }, [config]);
@@ -73,12 +70,10 @@ export default function App() {
       setIsDownloading(true);
       const zip = new JSZip();
 
-      // Add all project files into zip root
       projectFiles.forEach((file) => {
         zip.file(file.path, file.content);
       });
 
-      // Add userbot.service and README.md
       const content = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(content);
       const link = document.createElement('a');
@@ -96,39 +91,112 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
-      <Header
-        onDownloadZip={handleDownloadZip}
-        onCopyEnv={handleCopyEnv}
-        copiedEnv={copiedEnv}
-        isDownloading={isDownloading}
-      />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-mono text-sm selection:bg-cyan-500/30 selection:text-cyan-200">
+      {/* Top Bar */}
+      <header id="app-header" className="bg-slate-900 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center space-x-2">
+          <Terminal className="w-5 h-5 text-emerald-400" />
+          <span className="font-bold text-white tracking-wide">TG-VOICE-USERBOT</span>
+          <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+            CLI Daemon
+          </span>
+        </div>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
-        {/* Top Grid: Configurator + Live Telegram Expandable Blockquote Preview */}
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-          <div className="lg:col-span-7 flex flex-col">
-            <ConfigPanel config={config} onChange={setConfig} />
+        <div className="flex items-center gap-2">
+          <button
+            id="btn-copy-env"
+            onClick={handleCopyEnv}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors"
+          >
+            {copiedEnv ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Скопировано</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                <span>Скопировать .env</span>
+              </>
+            )}
+          </button>
+
+          <button
+            id="btn-download-zip"
+            onClick={handleDownloadZip}
+            disabled={isDownloading}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-cyan-600 hover:bg-cyan-500 text-white transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{isDownloading ? 'Сборка...' : 'Скачать ZIP'}</span>
+          </button>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 space-y-6">
+        {/* Urgent Server Diagnostic Banner */}
+        <section id="server-status-banner" className="bg-amber-950/40 border border-amber-500/40 rounded-lg p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <h2 className="text-sm font-bold text-amber-300 flex items-center gap-2">
+                Внимание: Зацикливание systemd и временная блокировка Telegram (FloodWait)
+              </h2>
+              <p className="text-xs text-amber-200/80 leading-relaxed font-sans">
+                Служба <code className="bg-amber-900/60 px-1 py-0.5 rounded text-amber-100">tg-voice-userbot.service</code> сейчас непрерывно падает и перезапускается в фоне (счётчик рестартов &gt; 300), потому что сессия ещё не авторизована, а systemd не может передать ввод кода подтверждения. Это отправляет запросы в цикле и продлевает тайм-аут Telegram.
+              </p>
+            </div>
           </div>
-          <div className="lg:col-span-5 flex flex-col">
-            <TelegramPreview config={config} />
+
+          <div className="bg-slate-950/80 border border-slate-800 rounded p-3 text-xs space-y-2">
+            <div className="text-slate-400 font-sans font-medium">Выполните на сервере по шагам:</div>
+            <div className="space-y-1.5 font-mono text-emerald-400">
+              <div><span className="text-slate-500"># 1. Остановите аварийно перезапускающийся сервис:</span></div>
+              <div className="bg-slate-900 px-2 py-1 rounded text-slate-100 selection:bg-emerald-500/30">
+                systemctl stop tg-voice-userbot.service
+              </div>
+
+              <div className="pt-1"><span className="text-slate-500"># 2. Подождите 2-3 минуты (пока спадет блокировка FloodWait 127s)</span></div>
+
+              <div className="pt-1"><span className="text-slate-500"># 3. Запустите юзербот вручную из консоли для однократной авторизации:</span></div>
+              <div className="bg-slate-900 px-2 py-1 rounded text-slate-100 selection:bg-emerald-500/30">
+                cd /opt/tg_voice_userbot && /opt/tg_voice_userbot/venv/bin/python userbot.py
+              </div>
+              <div className="text-slate-400 text-[11px] font-sans">
+                (Введите код и 2FA пароль прямо в терминале. Когда напишет "Authorized successfully as...", нажмите <kbd className="px-1 py-0.5 bg-slate-800 rounded border border-slate-700">Ctrl+C</kbd>)
+              </div>
+
+              <div className="pt-1"><span className="text-slate-500"># 4. Теперь снова включите фоновую службу systemd:</span></div>
+              <div className="bg-slate-900 px-2 py-1 rounded text-slate-100 selection:bg-emerald-500/30">
+                systemctl start tg-voice-userbot.service
+              </div>
+            </div>
           </div>
         </section>
 
-        {/* Middle Section: Full Project Code Viewer */}
+        {/* Configuration Editor */}
         <section className="space-y-2">
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                Исходный код проекта
-                <span className="text-xs px-2 py-0.5 rounded font-mono font-normal bg-slate-800 text-cyan-300 border border-slate-700">
-                  {projectFiles.length} файлов
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400">
-                Все файлы обновляются на лету в соответствии с вашими настройками в панели выше.
-              </p>
-            </div>
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              Параметры конфигурации
+            </h2>
+            <span className="text-xs text-slate-400 font-sans">
+              Настройки .env и whisper.cpp
+            </span>
+          </div>
+          <ConfigPanel config={config} onChange={setConfig} />
+        </section>
+
+        {/* Project Files Viewer */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-white flex items-center gap-2">
+              <FileText className="w-4 h-4 text-cyan-400" />
+              Файлы проекта
+              <span className="text-xs px-2 py-0.2 rounded bg-slate-800 text-cyan-300 border border-slate-700 font-normal">
+                {projectFiles.length}
+              </span>
+            </h2>
           </div>
 
           <CodeViewer
@@ -138,23 +206,7 @@ export default function App() {
             onDownloadSingleFile={handleDownloadSingleFile}
           />
         </section>
-
-        {/* Bottom Section: Step-by-Step Deployment Guide */}
-        <section>
-          <DeploymentGuide />
-        </section>
       </main>
-
-      <footer className="border-t border-slate-900 bg-slate-950/80 text-slate-500 py-5 text-center text-xs">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>
-            Telegram Voice Transcriber Userbot • Telethon + faster-whisper (CTranslate2)
-          </span>
-          <span className="text-slate-400">
-            Локальная STT-обработка без отправки голоса в облачные сервисы
-          </span>
-        </div>
-      </footer>
     </div>
   );
 }
