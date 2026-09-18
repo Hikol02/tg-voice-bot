@@ -4,6 +4,7 @@
 
 set -e
 
+ORIG_DIR="$PWD"
 INSTALL_DIR="/opt/tg_voice_userbot"
 
 echo "=========================================================="
@@ -183,9 +184,13 @@ PROCESS_ROUND_VIDEOS=True
 LOG_LEVEL=INFO
 ENV_EOF
 
-# Copy source python files if present in current dir, or write them
-if [ -f "userbot.py" ] && [ "$PWD" != "$INSTALL_DIR" ]; then
-    cp -f config.py proxy_resolver.py userbot.py "$INSTALL_DIR/"
+# Copy source python files
+if [ -f "$ORIG_DIR/userbot.py" ]; then
+    cp -f "$ORIG_DIR/config.py" "$ORIG_DIR/proxy_resolver.py" "$ORIG_DIR/userbot.py" "$INSTALL_DIR/"
+else
+    echo "[ERROR] userbot.py not found in $ORIG_DIR!"
+    echo "Please make sure you are running install.sh from the repository folder."
+    exit 1
 fi
 
 # Systemd service
