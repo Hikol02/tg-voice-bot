@@ -117,15 +117,12 @@ if [ ! -d "tg-ws-proxy" ]; then
 fi
 cd tg-ws-proxy
 python3 -m venv venv
-./venv/bin/pip install cryptography aiohttp websockets pillow customtkinter
+./venv/bin/pip install --upgrade pip -q
+./venv/bin/pip install -q certifi psutil cryptography aiohttp websockets pillow customtkinter
 
-cat << PROXY_CONFIG > /opt/tg-ws-proxy/config.json
-{
-  "port": 1443,
-  "secret": "dd54defaad7b9d6abf694539af11efe10b",
-  "cf_proxy": "auto"
-}
-PROXY_CONFIG
+# Pre-defined 32-hex secret (in Telegram mtproto URI it gets prefixed with dd)
+PROXY_RAW_SECRET="705ef901017a8caa3ed04d10cdb7b2e8"
+PROXY_DD_SECRET="dd${PROXY_RAW_SECRET}"
 
 cat << PROXY_SERVICE > /etc/systemd/system/tg-ws-proxy.service
 [Unit]
@@ -136,9 +133,11 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/tg-ws-proxy
-ExecStart=/opt/tg-ws-proxy/venv/bin/python -m proxy.tg_ws_proxy
+ExecStart=/opt/tg-ws-proxy/venv/bin/python -m proxy.tg_ws_proxy --port 1443 --host 127.0.0.1 --secret ${PROXY_RAW_SECRET}
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -146,15 +145,23 @@ PROXY_SERVICE
 
 systemctl daemon-reload
 systemctl enable --now tg-ws-proxy.service
-systemctl start tg-ws-proxy.service
-sleep 3
+systemctl restart tg-ws-proxy.service
+sleep 2
+
+if systemctl is-active --quiet tg-ws-proxy.service; then
+    echo "[INFO] tg-ws-proxy is active and listening on port 1443."
+else
+    echo "[WARNING] tg-ws-proxy service failed to start:"
+    systemctl status tg-ws-proxy.service --no-pager || true
+fi
+
 cd "$INSTALL_DIR"
 
 echo "[INFO] Step 4/6: Preparing Python Virtual Environment..."
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip -q
-pip install -q telethon python-dotenv PySocks cryptography
+pip install -q telethon python-dotenv PySocks cryptography "python-socks[asyncio]"
 
 echo "[INFO] Step 5/6: Writing Configuration and Systemd Unit..."
 
@@ -172,7 +179,7 @@ TG_WS_PROXY_SERVICE=tg-ws-proxy.service
 
 MTPROTO_HOST=127.0.0.1
 MTPROTO_PORT=1443
-MTPROTO_SECRET=dd54defaad7b9d6abf694539af11efe10b
+MTPROTO_SECRET=dd705ef901017a8caa3ed04d10cdb7b2e8
 
 STT_ENGINE=whisper.cpp
 WHISPER_DIR=$INSTALL_DIR/whisper.cpp

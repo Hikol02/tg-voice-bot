@@ -18,7 +18,7 @@ PROXY_TYPE: str = os.getenv("PROXY_TYPE", "MTPROTO").upper()
 # Fallback MTProto parameters
 MTPROTO_HOST: str = os.getenv("MTPROTO_HOST", "127.0.0.1")
 MTPROTO_PORT: int = int(os.getenv("MTPROTO_PORT", "1443"))
-MTPROTO_SECRET: str = os.getenv("MTPROTO_SECRET", "dd54defaad7b9d6abf694539af11efe10b")
+MTPROTO_SECRET: str = os.getenv("MTPROTO_SECRET", "dd705ef901017a8caa3ed04d10cdb7b2e8")
 
 # Fallback SOCKS5 parameters
 SOCKS_HOST: str = os.getenv("SOCKS_HOST", "127.0.0.1")

@@ -324,46 +324,58 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Telegram API Credentials
-API_ID: int = int(os.getenv("TELEGRAM_API_ID", "${cfg.apiId || '0'}"))
-API_HASH: str = os.getenv("TELEGRAM_API_HASH", "${cfg.apiHash || ''}")
-SESSION_NAME: str = os.getenv("TELEGRAM_SESSION_NAME", "${cfg.sessionName}")
-PHONE_NUMBER: str = os.getenv("TELEGRAM_PHONE_NUMBER", "${cfg.phoneNumber}")
+# Telegram API credentials from my.telegram.org
+API_ID: int = int(os.getenv("TELEGRAM_API_ID", "0"))
+API_HASH: str = os.getenv("TELEGRAM_API_HASH", "")
+SESSION_NAME: str = os.getenv("TELEGRAM_SESSION_NAME", "voice_transcriber_session")
+PHONE_NUMBER: str = os.getenv("TELEGRAM_PHONE_NUMBER", "")
 
-# Настройки проксирования
-PROXY_ENABLED: bool = os.getenv("PROXY_ENABLED", "${cfg.proxyEnabled ? 'True' : 'False'}").lower() in ("true", "1", "yes")
-PROXY_TYPE: str = os.getenv("PROXY_TYPE", "${cfg.proxyType}").upper()
+# Proxy configuration
+PROXY_ENABLED: bool = os.getenv("PROXY_ENABLED", "True").lower() in ("true", "1", "yes")
+AUTO_FETCH_PROXY_SECRET: bool = os.getenv("AUTO_FETCH_PROXY_SECRET", "True").lower() in ("true", "1", "yes")
+TG_WS_PROXY_SERVICE: str = os.getenv("TG_WS_PROXY_SERVICE", "tg-ws-proxy.service")
+PROXY_TYPE: str = os.getenv("PROXY_TYPE", "MTPROTO").upper()
 
-# Автоматический перехват секретного ключа и порта из сервиса tg-ws-proxy
-AUTO_FETCH_PROXY_SECRET: bool = os.getenv("AUTO_FETCH_PROXY_SECRET", "${cfg.autoFetchProxySecret ? 'True' : 'False'}").lower() in ("true", "1", "yes")
-TG_WS_PROXY_SERVICE: str = os.getenv("TG_WS_PROXY_SERVICE", "${cfg.tgWsProxyService || 'tg-ws-proxy.service'}")
+# Fallback MTProto parameters
+MTPROTO_HOST: str = os.getenv("MTPROTO_HOST", "127.0.0.1")
+MTPROTO_PORT: int = int(os.getenv("MTPROTO_PORT", "1443"))
+MTPROTO_SECRET: str = os.getenv("MTPROTO_SECRET", "dd705ef901017a8caa3ed04d10cdb7b2e8")
 
-# MTProto прокси (для локального WS прокси)
-MTPROTO_HOST: str = os.getenv("MTPROTO_HOST", "${cfg.mtprotoHost}")
-MTPROTO_PORT: int = int(os.getenv("MTPROTO_PORT", "${cfg.mtprotoPort}"))
-MTPROTO_SECRET: str = os.getenv("MTPROTO_SECRET", "${cfg.mtprotoSecret}")
+# Fallback SOCKS5 parameters
+SOCKS_HOST: str = os.getenv("SOCKS_HOST", "127.0.0.1")
+SOCKS_PORT: int = int(os.getenv("SOCKS_PORT", "10808"))
+SOCKS_USERNAME: str = os.getenv("SOCKS_USERNAME", "")
+SOCKS_PASSWORD: str = os.getenv("SOCKS_PASSWORD", "")
 
-# SOCKS5 / HTTP прокси
-SOCKS_HOST: str = os.getenv("SOCKS_HOST", "${cfg.socksHost}")
-SOCKS_PORT: int = int(os.getenv("SOCKS_PORT", "${cfg.socksPort}"))
-SOCKS_USERNAME: str = os.getenv("SOCKS_USERNAME", "${cfg.socksUsername}")
-SOCKS_PASSWORD: str = os.getenv("SOCKS_PASSWORD", "${cfg.socksPassword}")
+# Speech recognition settings
+# Engine: 'whisper.cpp' (recommended for older CPUs without AVX like Phenom II) or 'faster_whisper'
+STT_ENGINE: str = os.getenv("STT_ENGINE", "whisper.cpp").lower()
+WHISPER_DIR: str = os.getenv("WHISPER_DIR", "/opt/tg_voice_userbot/whisper.cpp")
+WHISPER_MODEL_SIZE: str = os.getenv("WHISPER_MODEL_SIZE", "base")
 
-# Модель STT faster-whisper
-WHISPER_MODEL_SIZE: str = os.getenv("WHISPER_MODEL_SIZE", "${cfg.whisperModelSize}")
-WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "${cfg.whisperDevice}")
-WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "${cfg.whisperComputeType}")
-WHISPER_LANGUAGE: str = os.getenv("WHISPER_LANGUAGE", "${cfg.whisperLanguage}")
-WHISPER_BEAM_SIZE: int = int(os.getenv("WHISPER_BEAM_SIZE", "${cfg.whisperBeamSize}"))
-WHISPER_VAD_FILTER: bool = os.getenv("WHISPER_VAD_FILTER", "${cfg.whisperVadFilter ? 'True' : 'False'}").lower() in ("true", "1", "yes")
+# Language: 'ru+en' (Russian with English anglicisms), 'ru', 'auto', 'en'
+LANGUAGE_MODE: str = os.getenv("LANGUAGE_MODE", "ru+en").lower()
+
+# Initial prompt used by Whisper to accurately transcribe technical terms and anglicisms
+ANGLICISMS_PROMPT: str = os.getenv(
+    "ANGLICISMS_PROMPT",
+    "Разговорная русская речь с IT-терминами и англицизмами: commit, push, pull request, bug, fix, deploy, merge, userbot, code, server, backend, frontend, release, issue, dev."
+)
+
+WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "cpu")
+WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+WHISPER_BEAM_SIZE: int = int(os.getenv("WHISPER_BEAM_SIZE", "5"))
+WHISPER_VAD_FILTER: bool = os.getenv("WHISPER_VAD_FILTER", "True").lower() in ("true", "1", "yes")
 WHISPER_DOWNLOAD_DIR: str = os.getenv("WHISPER_DOWNLOAD_DIR", "./models")
 
-# Поведение
-ACTION_MODE: str = os.getenv("ACTION_MODE", "${cfg.actionMode}").lower()
-QUOTE_HEADER: str = os.getenv("QUOTE_HEADER", "${cfg.quoteHeader}")
-PROCESS_ROUND_VIDEOS: bool = os.getenv("PROCESS_ROUND_VIDEOS", "${cfg.processRoundVideos ? 'True' : 'False'}").lower() in ("true", "1", "yes")
-NOTIFY_IF_EMPTY: bool = os.getenv("NOTIFY_IF_EMPTY", "${cfg.notifyIfEmpty ? 'True' : 'False'}").lower() in ("true", "1", "yes")
-LOG_LEVEL: str = os.getenv("LOG_LEVEL", "${cfg.logLevel}")
+# Userbot behavior
+# Header before quote: empty string by default per user request (no emoji, no header)
+QUOTE_HEADER: str = os.getenv("QUOTE_HEADER", "")
+# Action mode: 'edit' (edits the voice message with quote) or 'reply' (replies with quote)
+ACTION_MODE: str = os.getenv("ACTION_MODE", "edit").lower()
+PROCESS_ROUND_VIDEOS: bool = os.getenv("PROCESS_ROUND_VIDEOS", "True").lower() in ("true", "1", "yes")
+
+LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 `,
     },
     {
@@ -689,15 +701,12 @@ if [ ! -d "tg-ws-proxy" ]; then
 fi
 cd tg-ws-proxy
 python3 -m venv venv
-./venv/bin/pip install cryptography aiohttp websockets pillow customtkinter
+./venv/bin/pip install --upgrade pip -q
+./venv/bin/pip install -q certifi psutil cryptography aiohttp websockets pillow customtkinter
 
-cat << PROXY_CONFIG > /opt/tg-ws-proxy/config.json
-{
-  "port": 1443,
-  "secret": "dd54defaad7b9d6abf694539af11efe10b",
-  "cf_proxy": "auto"
-}
-PROXY_CONFIG
+# Pre-defined 32-hex secret (in Telegram mtproto URI it gets prefixed with dd)
+PROXY_RAW_SECRET="705ef901017a8caa3ed04d10cdb7b2e8"
+PROXY_DD_SECRET="dd\${PROXY_RAW_SECRET}"
 
 cat << PROXY_SERVICE > /etc/systemd/system/tg-ws-proxy.service
 [Unit]
@@ -708,9 +717,11 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/tg-ws-proxy
-ExecStart=/opt/tg-ws-proxy/venv/bin/python -m proxy.tg_ws_proxy
+ExecStart=/opt/tg-ws-proxy/venv/bin/python -m proxy.tg_ws_proxy --port 1443 --host 127.0.0.1 --secret \${PROXY_RAW_SECRET}
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -718,15 +729,23 @@ PROXY_SERVICE
 
 systemctl daemon-reload
 systemctl enable --now tg-ws-proxy.service
-systemctl start tg-ws-proxy.service
-sleep 3
+systemctl restart tg-ws-proxy.service
+sleep 2
+
+if systemctl is-active --quiet tg-ws-proxy.service; then
+    echo "[INFO] tg-ws-proxy is active and listening on port 1443."
+else
+    echo "[WARNING] tg-ws-proxy service failed to start:"
+    systemctl status tg-ws-proxy.service --no-pager || true
+fi
+
 cd "\$INSTALL_DIR"
 
 echo "[INFO] Step 4/6: Preparing Python Virtual Environment..."
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip -q
-pip install -q telethon python-dotenv PySocks cryptography
+pip install -q telethon python-dotenv PySocks cryptography "python-socks[asyncio]"
 
 echo "[INFO] Step 5/6: Writing Configuration and Systemd Unit..."
 
@@ -744,7 +763,7 @@ TG_WS_PROXY_SERVICE=tg-ws-proxy.service
 
 MTPROTO_HOST=127.0.0.1
 MTPROTO_PORT=1443
-MTPROTO_SECRET=dd54defaad7b9d6abf694539af11efe10b
+MTPROTO_SECRET=dd705ef901017a8caa3ed04d10cdb7b2e8
 
 STT_ENGINE=whisper.cpp
 WHISPER_DIR=\$INSTALL_DIR/whisper.cpp
