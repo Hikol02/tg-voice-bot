@@ -6,7 +6,9 @@ import tempfile
 import subprocess
 import getpass
 import random
-from typing import Optional, Tuple
+import json
+import urllib.request
+from typing import Optional, Tuple, Dict
 from telethon import TelegramClient, events, connection, functions, errors
 from telethon.tl import types
 from telethon.tl.types import MessageEntityBlockquote
@@ -138,6 +140,132 @@ def utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
 
 
+CHAT_MODELS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chat_models.json")
+
+
+def load_chat_models() -> Dict[str, str]:
+    if not os.path.exists(CHAT_MODELS_FILE):
+        return {}
+    try:
+        with open(CHAT_MODELS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except Exception as e:
+        logger.warning(f"Could not load chat_models.json: {e}")
+        return {}
+
+
+def save_chat_model(chat_id: int, model_name: str) -> None:
+    data = load_chat_models()
+    data[str(chat_id)] = model_name.lower().strip()
+    try:
+        with open(CHAT_MODELS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        logger.info(f"Saved custom model '{model_name}' for chat ID {chat_id}")
+    except Exception as e:
+        logger.error(f"Could not save chat model for {chat_id}: {e}")
+
+
+def delete_chat_model(chat_id: int) -> bool:
+    data = load_chat_models()
+    if str(chat_id) in data:
+        del data[str(chat_id)]
+        try:
+            with open(CHAT_MODELS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            logger.info(f"Removed custom model for chat ID {chat_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Could not delete custom model for {chat_id}: {e}")
+    return False
+
+
+def get_chat_model(chat_id: int) -> str:
+    data = load_chat_models()
+    return data.get(str(chat_id), config.WHISPER_MODEL_SIZE)
+
+
+def is_model_installed(model_name: str) -> bool:
+    model_name = model_name.lower().strip()
+    model_file = os.path.join(config.WHISPER_DIR, f"models/ggml-{model_name}.bin")
+    return os.path.exists(model_file) and os.path.getsize(model_file) > 1000000
+
+
+def download_whisper_cpp_model(model_name: str) -> Tuple[bool, str]:
+    """
+    Downloads whisper.cpp model if missing. Uses download-ggml-model.sh
+    if available, otherwise falls back to direct download from Hugging Face.
+    """
+    model_name = model_name.lower().strip()
+    models_dir = os.path.join(config.WHISPER_DIR, "models")
+    os.makedirs(models_dir, exist_ok=True)
+    target_file = os.path.join(models_dir, f"ggml-{model_name}.bin")
+
+    if os.path.exists(target_file) and os.path.getsize(target_file) > 1000000:
+        return True, target_file
+
+    logger.info(f"Attempting download of whisper.cpp model '{model_name}'...")
+
+    # Method 1: Using whisper.cpp official download script
+    script_path = os.path.join(config.WHISPER_DIR, "models", "download-ggml-model.sh")
+    if os.path.exists(script_path):
+        try:
+            logger.info(f"Executing {script_path} {model_name}...")
+            res = subprocess.run(
+                ["bash", "./models/download-ggml-model.sh", model_name],
+                cwd=config.WHISPER_DIR,
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+            if res.returncode == 0 and os.path.exists(target_file) and os.path.getsize(target_file) > 1000000:
+                logger.info(f"Successfully downloaded {model_name} via download-ggml-model.sh.")
+                return True, target_file
+            else:
+                logger.warning(f"download-ggml-model.sh output: {res.stderr or res.stdout}")
+        except Exception as e:
+            logger.warning(f"Error running download-ggml-model.sh: {e}")
+
+    # Method 2: Direct HTTP download from Hugging Face
+    url = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{model_name}.bin"
+    tmp_file = target_file + f".part_{os.getpid()}"
+    logger.info(f"Downloading {model_name} directly from {url}...")
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; tg-voice-userbot)"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status != 200:
+                return False, f"HTTP Error {resp.status}"
+            with open(tmp_file, "wb") as f_out:
+                while True:
+                    chunk = resp.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    f_out.write(chunk)
+
+        if os.path.exists(tmp_file) and os.path.getsize(tmp_file) > 1000000:
+            os.replace(tmp_file, target_file)
+            logger.info(f"Successfully downloaded ggml-{model_name}.bin ({os.path.getsize(target_file)} bytes).")
+            return True, target_file
+        else:
+            if os.path.exists(tmp_file):
+                try:
+                    os.remove(tmp_file)
+                except Exception:
+                    pass
+            return False, "Файл загружен не полностью или повреждён (< 1 МБ)"
+    except Exception as e:
+        if os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
+        logger.exception(f"Direct download failed for {model_name}: {e}")
+        return False, str(e)
+
+
 def save_env_setting(key: str, value: str):
     env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
     if not os.path.exists(env_path):
@@ -164,16 +292,26 @@ def save_env_setting(key: str, value: str):
         f.writelines(new_lines)
 
 
-def run_whisper_cpp(audio_path: str) -> str:
+def run_whisper_cpp(audio_path: str, model_name: Optional[str] = None) -> str:
     bin_path = detect_whisper_cpp_binary()
     if not bin_path:
         logger.error("whisper.cpp executable not found.")
         return ""
 
-    model_file = os.path.join(config.WHISPER_DIR, f"models/ggml-{config.WHISPER_MODEL_SIZE}.bin")
-    if not os.path.exists(model_file):
-        logger.error(f"whisper.cpp model not found: {model_file}")
-        return ""
+    target_model = (model_name or config.WHISPER_MODEL_SIZE).lower().strip()
+    model_file = os.path.join(config.WHISPER_DIR, f"models/ggml-{target_model}.bin")
+
+    # If model is missing, try automatic download
+    if not os.path.exists(model_file) or os.path.getsize(model_file) < 1000000:
+        logger.warning(f"Model file {model_file} not found. Attempting automatic download of '{target_model}'...")
+        ok, res = download_whisper_cpp_model(target_model)
+        if not ok or not os.path.exists(model_file):
+            logger.error(f"Could not auto-download model '{target_model}'. Falling back to default '{config.WHISPER_MODEL_SIZE}'")
+            target_model = config.WHISPER_MODEL_SIZE
+            model_file = os.path.join(config.WHISPER_DIR, f"models/ggml-{target_model}.bin")
+            if not os.path.exists(model_file):
+                logger.error(f"Fallback model also missing: {model_file}")
+                return ""
 
     wav_path = audio_path + ".wav"
     try:
@@ -198,18 +336,20 @@ def run_whisper_cpp(audio_path: str) -> str:
         elif config.LANGUAGE_MODE == "ru":
             lang_arg = "ru"
 
+        threads = str(os.cpu_count() or 4)
         cmd = [
             bin_path,
             "-m", model_file,
             "-l", lang_arg,
             "-nt",
-            "-t", str(os.cpu_count() or 4),
+            "-t", threads,
             "-f", wav_path,
         ]
         if prompt_arg:
             cmd.extend(["--prompt", prompt_arg])
 
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=180)
+        logger.info(f"Running whisper-cli with model '{target_model}' on {threads} threads...")
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=300)
         lines = [
             line.strip()
             for line in res.stdout.split("\n")
@@ -227,7 +367,7 @@ def run_whisper_cpp(audio_path: str) -> str:
                 pass
 
 
-def run_faster_whisper(audio_path: str) -> str:
+def run_faster_whisper(audio_path: str, model_name: Optional[str] = None) -> str:
     global faster_model
     if not faster_model:
         return ""
@@ -254,11 +394,11 @@ def run_faster_whisper(audio_path: str) -> str:
     return " ".join(s.text.strip() for s in segments if s.text.strip()).strip()
 
 
-def transcribe_audio_file(audio_path: str) -> str:
+def transcribe_audio_file(audio_path: str, model_name: Optional[str] = None) -> str:
     if config.STT_ENGINE == "whisper.cpp" or faster_model is None:
-        return run_whisper_cpp(audio_path)
+        return run_whisper_cpp(audio_path, model_name)
     else:
-        return run_faster_whisper(audio_path)
+        return run_faster_whisper(audio_path, model_name)
 
 
 def is_target_media(message) -> bool:
@@ -277,7 +417,7 @@ def is_target_media(message) -> bool:
     return False
 
 
-# In-chat settings menu handler (.menu, .model, .lang, .mode, .proxy, .help)
+# In-chat settings menu handler (.menu, .model, .setmodel, .lang, .mode, .proxy, .help)
 @client.on(events.NewMessage(outgoing=True))
 async def on_command(event):
     text = (event.raw_text or "").strip()
@@ -290,21 +430,27 @@ async def on_command(event):
     if cmd == ".menu":
         bin_status = "whisper.cpp (native CPU)" if config.STT_ENGINE == "whisper.cpp" else "faster-whisper"
         proxy_info = f"{config.MTPROTO_HOST}:{config.MTPROTO_PORT}" if config.PROXY_ENABLED else "Disabled"
+        chat_model = load_chat_models().get(str(event.chat_id))
+        chat_model_display = f"{chat_model} (персональная)" if chat_model else f"{config.WHISPER_MODEL_SIZE} (глобальная)"
         menu_text = (
             "[Voice Transcriber Settings]\n\n"
-            f"• Engine: {bin_status}\n"
-            f"• Model: {config.WHISPER_MODEL_SIZE}\n"
-            f"• Language mode: {config.LANGUAGE_MODE}\n"
-            f"• Output mode: {config.ACTION_MODE}\n"
-            f"• Round videos: {'Enabled' if config.PROCESS_ROUND_VIDEOS else 'Disabled'}\n"
-            f"• Proxy: {proxy_info}\n\n"
-            "Commands to change settings:\n"
-            "• .model <tiny|base|small|medium> - change Whisper model\n"
-            "• .lang <ru+en|ru|auto|en> - change language mode\n"
-            "• .mode <edit|reply> - edit voice or reply\n"
-            "• .rounds <on|off> - toggle round video notes\n"
-            "• .proxy - test proxy connection\n"
-            "• .close - delete this menu"
+            f"• Движок: {bin_status}\n"
+            f"• Глобальная модель: {config.WHISPER_MODEL_SIZE}\n"
+            f"• Модель для этого чата (ID {event.chat_id}): {chat_model_display}\n"
+            f"• Языковой режим: {config.LANGUAGE_MODE}\n"
+            f"• Режим вывода: {config.ACTION_MODE}\n"
+            f"• Кругляшки видео: {'Включены' if config.PROCESS_ROUND_VIDEOS else 'Выключены'}\n"
+            f"• Прокси: {proxy_info}\n\n"
+            "Команды управления:\n"
+            "• .model <имя> — сменить глобальную модель (с автозагрузкой)\n"
+            "• .setmodel <имя> — персональная модель для ЭТОГО чата (по ID)\n"
+            "• .setmodel reset — сбросить модель чата на глобальную\n"
+            "• .chatmodels — список чатов с персональными моделями\n"
+            "• .lang <ru+en|ru|auto|en> — языковой режим\n"
+            "• .mode <edit|reply> — редактировать голосовое или отвечать\n"
+            "• .rounds <on|off> — транскрипция кругляшков\n"
+            "• .proxy — проверка прокси\n"
+            "• .close — закрыть меню"
         )
         await event.edit(menu_text)
         return
@@ -313,17 +459,81 @@ async def on_command(event):
         await event.delete()
         return
 
+    if cmd == ".chatmodels":
+        all_chats = load_chat_models()
+        if not all_chats:
+            await event.edit(f"[Voice Transcriber] Нет чатов с персональными моделями. Все чаты используют глобальную модель: {config.WHISPER_MODEL_SIZE}")
+        else:
+            lines = ["[Персональные модели чатов]"]
+            for cid, m in all_chats.items():
+                is_here = " ← текущий чат" if str(event.chat_id) == cid else ""
+                lines.append(f"• ID {cid}: {m}{is_here}")
+            lines.append(f"\nГлобальная по умолчанию: {config.WHISPER_MODEL_SIZE}")
+            lines.append("Чтобы сбросить в текущем чате: .setmodel reset")
+            await event.edit("\n".join(lines))
+        return
+
     if cmd == ".model":
         if len(parts) > 1:
-            new_model = parts[1].lower()
-            if new_model in ("tiny", "base", "small", "medium"):
-                config.WHISPER_MODEL_SIZE = new_model
-                save_env_setting("WHISPER_MODEL_SIZE", new_model)
-                await event.edit(f"[Voice Transcriber] Model set to: {new_model}")
-            else:
-                await event.edit("[Voice Transcriber] Allowed models: tiny, base, small, medium")
+            new_model = parts[1].lower().strip()
+            if not is_model_installed(new_model):
+                await event.edit(f"[Voice Transcriber] ⏳ Модель '{new_model}' не найдена локально. Начинаю загрузку, пожалуйста, подождите...")
+                loop = asyncio.get_running_loop()
+                ok, res = await loop.run_in_executor(None, download_whisper_cpp_model, new_model)
+                if not ok:
+                    await event.edit(f"[Voice Transcriber] ❌ Ошибка загрузки модели '{new_model}': {res}")
+                    return
+            config.WHISPER_MODEL_SIZE = new_model
+            save_env_setting("WHISPER_MODEL_SIZE", new_model)
+            await event.edit(f"[Voice Transcriber] ✅ Глобальная модель успешно установлена: {new_model}")
         else:
-            await event.edit(f"[Voice Transcriber] Current model: {config.WHISPER_MODEL_SIZE}")
+            chat_m = load_chat_models().get(str(event.chat_id))
+            cm_str = f"\n• Модель для текущего чата (ID {event.chat_id}): {chat_m}" if chat_m else ""
+            await event.edit(
+                f"[Voice Transcriber]\n"
+                f"• Глобальная модель: {config.WHISPER_MODEL_SIZE}{cm_str}\n\n"
+                f"Использование:\n"
+                f"• .model <имя> — сменить глобальную (tiny, base, small, medium, large-v3-turbo)\n"
+                f"• .setmodel <имя> — установить модель только для текущего чата"
+            )
+        return
+
+    if cmd in (".setmodel", ".chatmodel"):
+        chat_id = event.chat_id
+        if len(parts) > 1:
+            arg = parts[1].lower().strip()
+            if arg in ("reset", "default", "del", "clear", "remove"):
+                deleted = delete_chat_model(chat_id)
+                if deleted:
+                    await event.edit(f"[Voice Transcriber] 🔄 Для чата ID {chat_id} сброшена персональная модель. Теперь используется глобальная: {config.WHISPER_MODEL_SIZE}")
+                else:
+                    await event.edit(f"[Voice Transcriber] Для чата ID {chat_id} персональная модель не была установлена (используется глобальная: {config.WHISPER_MODEL_SIZE})")
+                return
+
+            new_model = arg
+            if not is_model_installed(new_model):
+                await event.edit(f"[Voice Transcriber] ⏳ Модель '{new_model}' не найдена локально. Загружаю для чата ID {chat_id}...")
+                loop = asyncio.get_running_loop()
+                ok, res = await loop.run_in_executor(None, download_whisper_cpp_model, new_model)
+                if not ok:
+                    await event.edit(f"[Voice Transcriber] ❌ Ошибка загрузки модели '{new_model}': {res}")
+                    return
+
+            save_chat_model(chat_id, new_model)
+            await event.edit(f"[Voice Transcriber] ✅ Для чата ID {chat_id} успешно установлена персональная модель: {new_model}\n(Глобальная по умолчанию: {config.WHISPER_MODEL_SIZE})")
+        else:
+            chat_m = load_chat_models().get(str(chat_id))
+            active_m = f"{chat_m} (персональная)" if chat_m else f"{config.WHISPER_MODEL_SIZE} (глобальная по умолчанию)"
+            text_info = (
+                f"[Voice Transcriber • Модель чата]\n"
+                f"• ID чата: {chat_id}\n"
+                f"• Активная модель: {active_m}\n"
+                f"• Глобальная модель: {config.WHISPER_MODEL_SIZE}\n\n"
+                "Команды:\n"
+                f"• .setmodel <tiny|base|small|medium|large-v3-turbo> — привязать модель к этому чату\n"
+                f"• .setmodel reset — сбросить и использовать глобальную"
+            )
+            await event.edit(text_info)
         return
 
     if cmd == ".lang":
@@ -386,7 +596,9 @@ async def on_voice_message(event):
     if not is_target_media(event.message):
         return
 
-    logger.info(f"Intercepted outgoing voice message (ID: {event.message.id})")
+    chat_id = event.chat_id
+    chosen_model = get_chat_model(chat_id)
+    logger.info(f"Intercepted outgoing voice message (ID: {event.message.id}) in chat {chat_id}. Using model: '{chosen_model}'")
     tmp_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
@@ -395,7 +607,7 @@ async def on_voice_message(event):
         await event.download_media(file=tmp_path)
 
         loop = asyncio.get_running_loop()
-        transcribed_text = await loop.run_in_executor(None, transcribe_audio_file, tmp_path)
+        transcribed_text = await loop.run_in_executor(None, transcribe_audio_file, tmp_path, chosen_model)
 
         if not transcribed_text:
             logger.info("Transcription yielded empty result.")
